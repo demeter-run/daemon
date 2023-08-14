@@ -1,0 +1,20 @@
+[package]
+name = "demeter-operator"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1.0.72"
+futures = "0.3.28"
+k8s-openapi = { version = "0.19.0", features = ["v1_27"] }
+kube = { version = "0.85.0", features = ["runtime", "derive"] }
+schemars = "0.8.12"
+serde = "1.0.183"
+serde_json = "1.0.104"
+serde_yaml = "0.9.25"
+thiserror = "1.0.44"
+tokio = { version = "1.30.0", features = ["macros", "rt-multi-thread", "time"] }
+tracing = "0.1.37"
+tracing-subscriber = "0.3.17"

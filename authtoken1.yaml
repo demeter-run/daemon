@@ -1,0 +1,8 @@
+apiVersion: demeter.run/v1alpha
+kind: AuthToken
+metadata:
+  name: token1
+spec:
+  issuer: txpipe1
+  viewed: false
+  revoked: false
