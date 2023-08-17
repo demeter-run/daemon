@@ -18,3 +18,7 @@ thiserror = "1.0.44"
 tokio = { version = "1.30.0", features = ["macros", "rt-multi-thread", "time"] }
 tracing = "0.1.37"
 tracing-subscriber = "0.3.17"
+pasetors = { version = "0.6.7", features = ["v2"] }
+anymap = "0.12.1"
+hex = { version = "0.4.3", features = ["serde"] }
+config = "0.13.3"
