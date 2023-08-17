@@ -33,13 +33,11 @@ impl ConfigRoot {
 async fn main() {
     tracing_subscriber::fmt::init();
 
-    let kp = pasetors::keys::AsymmetricKeyPair::<pasetors::version2::V2>::generate().unwrap();
-    dbg!(hex::encode(kp.secret.as_bytes()));
-    dbg!(hex::encode(kp.public.as_bytes()));
+    //let kp = pasetors::keys::AsymmetricKeyPair::<pasetors::version2::V2>::generate().unwrap();
+    //dbg!(hex::encode(kp.secret.as_bytes()));
+    //dbg!(hex::encode(kp.public.as_bytes()));
 
     let config = ConfigRoot::new(&None).expect("couldn't load config");
-
-    dbg!(&config.auth.secret_key.len());
 
     let kubernetes_client: Client = Client::try_default()
         .await

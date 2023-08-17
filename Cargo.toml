@@ -26,3 +26,9 @@ config = "0.13.3"
 pasetors = { git = "https://github.com/demeter-run/pasetors.git", features = [
     "v2",
 ] }
+
+# util for cross compilation
+openssl = { version = '0.10', optional = true }
+
+[features]
+vendored-openssl = ["openssl/vendored"]
