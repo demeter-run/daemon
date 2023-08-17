@@ -1125,8 +1125,7 @@ dependencies = [
 [[package]]
 name = "pasetors"
 version = "0.6.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ba765699a309908d55950919a3445e9491453e89b2587b1b2abe4143a48894c0"
+source = "git+https://github.com/demeter-run/pasetors.git#aac984e3366396f3c23e7cda3585d0e4fe525b68"
 dependencies = [
  "ct-codecs",
  "ed25519-compact",

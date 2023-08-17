@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use kube::{CustomResource, ResourceExt};
 use pasetors::{claims::Claims, keys::AsymmetricSecretKey};
@@ -29,7 +29,7 @@ pub struct AuthTokenStatus {
 )]
 pub struct AuthTokenSpec {
     issuer: String,
-    expiration: Option<u64>,
+    expiration_days: Option<u32>,
     viewed: bool,
     revoked: bool,
 }
@@ -43,9 +43,16 @@ fn build_new_paseto(token: &AuthToken, ctx: &ContextData) -> String {
     let secret_key =
         AsymmetricSecretKey::from(&cfg.secret_key).expect("invalid asymmetric secret key");
 
-    let ns = token.namespace().unwrap();
+    let mut c = Claims::empty();
 
-    let mut c = Claims::new().unwrap();
+    if let Some(days) = token.spec.expiration_days {
+        let duration = Duration::from_secs(3600 * 24 * days as u64);
+        c.expires_in(&duration).unwrap()
+    };
+
+    c.issuer(&token.spec.issuer).unwrap();
+
+    let ns = token.namespace().unwrap();
     c.subject(&ns).unwrap();
 
     let msg = c.to_string().unwrap();
@@ -79,8 +86,8 @@ pub fn derive_state(
     }
 
     let finalizer = match is_expired(&spec) {
-        true => Some("demeter.run/wait-for-expired".into()),
-        false => None,
+        true => None,
+        false => Some("demeter.run/wait-for-expired".into()),
     };
 
     DerivedResourceState {
