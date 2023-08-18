@@ -29,6 +29,7 @@ pasetors = { git = "https://github.com/demeter-run/pasetors.git", features = [
 
 # util for cross compilation
 openssl = { version = '0.10', optional = true }
+clap = { version = "4.3.22", features = ["derive"] }
 
 [features]
 vendored-openssl = ["openssl/vendored"]
