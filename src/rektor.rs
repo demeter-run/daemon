@@ -45,53 +45,51 @@ pub enum Error {
     UserInputError(String),
 }
 
-pub struct NamespacedAgent<T> {
-    api: Api<T>,
-    res: Arc<T>,
-}
-
-pub struct DerivedResourceState<K, S>
+pub struct DerivedResourceState<S>
 where
-    K: Send + Sync,
     S: Send + Sync,
 {
-    pub spec: Arc<K>,
     pub status: S,
     pub finalizer: Option<String>,
 }
 
-impl<K, S> DerivedResourceState<K, S>
+impl<S> DerivedResourceState<S>
 where
-    K: Resource<Scope = NamespaceResourceScope> + DeserializeOwned + Send + Sync,
+    S: Serialize + Send + Sync,
+{
+    fn status_patch(&self) -> Patch<Value> {
+        Patch::Merge(json!({ "status": self.status }))
+    }
+}
+
+pub async fn apply<K, S>(
+    owner: &K,
+    state: DerivedResourceState<S>,
+    context: Arc<ContextData>,
+) -> Result<(), Error>
+where
+    K: Resource<Scope = NamespaceResourceScope> + DeserializeOwned,
     K::DynamicType: Default,
     S: Serialize + Send + Sync,
 {
-    pub async fn patch_status(&self, api: &Api<K>) -> Result<K, Error> {
-        let name = self.spec.name_any();
-        let data = json!({ "status": self.status });
-        let patch: Patch<Value> = Patch::Merge(data);
+    let client = context.client.clone();
 
-        api.patch_status(&name, &PatchParams::default(), &patch)
-            .await
-            .map_err(|source| Error::KubeError { source })
-    }
+    let ns: String = owner
+        .namespace()
+        .ok_or(Error::UserInputError("missing namespace".into()))?;
 
-    pub async fn apply_in(&self, context: Arc<ContextData>) -> Result<K, Error>
-    where
-        S: Serialize,
-    {
-        let client = context.client.clone();
+    let api = Api::<K>::namespaced(client, &ns);
 
-        let ns: String = self
-            .spec
-            .namespace()
-            .ok_or(Error::UserInputError("missing namespace".into()))?;
+    let name = owner.name_any();
 
-        let api = Api::namespaced(client, &ns);
+    api.patch_status(&name, &PatchParams::default(), &state.status_patch())
+        .await
+        .map_err(|source| Error::KubeError { source })?;
 
-        self.patch_status(&api).await
-    }
+    Ok(())
 }
+
+pub type DeriveStateFn<K, S> = fn(res: &K, ctx: &ContextData) -> DerivedResourceState<S>;
 
 pub async fn run<K, S>(context: Arc<ContextData>, derive: DeriveStateFn<K, S>)
 where
@@ -117,8 +115,8 @@ where
     Controller::new(api.clone(), Config::default())
         .run(
             |r, c| async move {
-                let state = derive(r.clone(), &c);
-                state.apply_in(c).await?;
+                let state = derive(&r, &c);
+                apply(r.as_ref(), state, c).await?;
 
                 Ok(Action::await_change())
             },
@@ -137,8 +135,6 @@ where
         })
         .await;
 }
-
-pub type DeriveStateFn<K, S> = fn(res: Arc<K>, ctx: &ContextData) -> DerivedResourceState<K, S>;
 
 fn on_error<K>(spec: Arc<K>, error: &Error, _context: Arc<ContextData>) -> Action {
     warn!(%error, "reconciliation error");

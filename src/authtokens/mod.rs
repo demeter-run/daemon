@@ -65,10 +65,7 @@ fn is_expired(token: &AuthToken) -> bool {
     false
 }
 
-pub fn derive_state(
-    spec: Arc<AuthToken>,
-    ctx: &ContextData,
-) -> DerivedResourceState<AuthToken, AuthTokenStatus> {
+pub fn derive_state(spec: &AuthToken, ctx: &ContextData) -> DerivedResourceState<AuthTokenStatus> {
     let mut status = spec.status.clone().unwrap_or_default();
 
     if !status.emitted {
@@ -90,9 +87,5 @@ pub fn derive_state(
         false => Some("demeter.run/wait-for-expired".into()),
     };
 
-    DerivedResourceState {
-        spec,
-        finalizer,
-        status,
-    }
+    DerivedResourceState { finalizer, status }
 }
