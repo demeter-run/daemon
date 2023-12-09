@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\nINSERT INTO apikeys (namespace, digest, salt) \nVALUES ($1, $2, $3)\n",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "094da08af09a7a5a4f4725f40106c54d7248b01cbfeaa3649274d855639f7f99"
+}
