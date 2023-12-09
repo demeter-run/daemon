@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\nINSERT INTO namespaces (name) \nVALUES ($1)\n",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "7d68a02d0f5acfb4333c60e46772901f8eb2ea8a6899370a874bdefd69ccb64e"
+}

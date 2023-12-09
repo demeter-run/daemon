@@ -1,5 +1,5 @@
 [package]
-name = "demeter-operator"
+name = "dmtrd"
 version = "0.1.0"
 edition = "2021"
 
@@ -21,15 +21,8 @@ tracing-subscriber = "0.3.17"
 anymap = "0.12.1"
 hex = { version = "0.4.3", features = ["serde"] }
 config = "0.13.3"
-
-# pasetors = { version = "0.6.7", features = ["v2"], path = "../pasetors" }
-pasetors = { git = "https://github.com/demeter-run/pasetors.git", features = [
-    "v2",
-] }
-
-# util for cross compilation
-openssl = { version = '0.10', optional = true }
 clap = { version = "4.3.22", features = ["derive"] }
-
-[features]
-vendored-openssl = ["openssl/vendored"]
+base64 = "0.21.2"
+tonic = "0.9.2"
+argon2 = "0.5.2"
+sqlx = { version = "0.7.3", features = ["runtime-tokio-rustls", "sqlite"] }
