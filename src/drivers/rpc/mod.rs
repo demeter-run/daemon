@@ -1,42 +1,28 @@
+use anyhow::{Context, Result};
+use dmtri::demeter::ops::v1alpha::ops_service_server::OpsServiceServer;
 use serde::{Deserialize, Serialize};
-use std::fmt::Display;
-use thiserror::Error;
-use tonic::{codegen::InterceptedService, transport::Server};
+use tonic::transport::Server;
 
-mod auth;
+pub mod auth;
 mod ops;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Config {
-    listen_address: String,
-    auth: auth_v3::Config,
+    pub listen_address: String,
 }
 
-#[derive(Error, Debug)]
-enum Error {
-    #[error("server error {0}")]
-    Server(String),
-}
-
-impl Error {
-    fn server(err: impl Display) -> Self {
-        Self::Server(err.to_string())
-    }
-}
-
-async fn serve(config: Config) -> Result<(), Error> {
+pub async fn serve(config: Config) -> Result<()> {
     let addr = config.listen_address.parse().unwrap();
+    let inner = ops::OpsServiceImpl::new();
+    let auth = auth::build_interceptor();
 
-    let mut server = Server::builder();
+    let server = OpsServiceServer::with_interceptor(inner, auth);
 
-    let service = InterceptedService::new(
-        ops::OpsServiceImpl::new(),
-        auth_v3::build_interceptor(&config.auth),
-    );
-
-    let server = server.add_service(service);
-
-    server.serve(addr).await.map_err(Error::server)?;
+    Server::builder()
+        .add_service(server)
+        .serve(addr)
+        .await
+        .context("running grpc server")?;
 
     Ok(())
 }
