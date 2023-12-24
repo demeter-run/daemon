@@ -1,4 +1,4 @@
-use demeter_core_spec::demeter::core::v1alpha::*;
+use dmtri::demeter::ops::v1alpha::*;
 use tonic::async_trait;
 
 pub struct OpsServiceImpl;
@@ -15,6 +15,7 @@ impl ops_service_server::OpsService for OpsServiceImpl {
         &self,
         request: tonic::Request<CreateResourceRequest>,
     ) -> Result<tonic::Response<CreateResourceResponse>, tonic::Status> {
+        todo!()
     }
 
     async fn list_resources(

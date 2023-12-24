@@ -1,7 +1,6 @@
-use std::{io::stdout, sync::Arc};
-
 use clap::Parser;
 use serde::Deserialize;
+use tracing::info;
 
 #[derive(Parser)]
 #[clap(name = "Demeter Operator", version = "")]
@@ -31,27 +30,15 @@ impl ConfigRoot {
 
 #[tokio::main]
 async fn main() {
-    let app = App::parse();
+    let _ = App::parse();
 
     tracing_subscriber::fmt::init();
 
-    // let mut opt = ConnectOptions::new("protocol://username:password@host/database");
-    // opt.max_connections(100)
-    //     .min_connections(5)
-    //     .connect_timeout(Duration::from_secs(8))
-    //     .acquire_timeout(Duration::from_secs(8))
-    //     .idle_timeout(Duration::from_secs(8))
-    //     .max_lifetime(Duration::from_secs(8))
-    //     .sqlx_logging(true)
-    //     .sqlx_logging_level(log::LevelFilter::Info)
-    //     .set_schema_search_path("my_schema"); // Setting default PostgreSQL schema
+    info!("starting rpc driver");
 
-    // let db = Database::connect(opt).await?;
-
-    // dmtrd::drivers::rpc::serve(Config {
-    //     listen_address: "[::]:50051".into(),
-    //     auth: auth_v3::Config {},
-    // })
-    // .await
-    // .unwrap();
+    dmtrd::drivers::rpc::serve(dmtrd::drivers::rpc::Config {
+        listen_address: "[::]:50051".into(),
+    })
+    .await
+    .unwrap();
 }

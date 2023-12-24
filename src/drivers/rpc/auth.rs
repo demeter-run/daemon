@@ -1,5 +1,7 @@
-use dmtrd::domain::fabric_inbox::AuthCredential;
-use serde::{Deserialize, Serialize};
+use tonic::Status;
+use tracing::warn;
+
+use crate::domain;
 
 #[derive(Clone)]
 pub struct Authenticator {}
@@ -22,10 +24,23 @@ impl tonic::service::Interceptor for Authenticator {
         &mut self,
         mut request: tonic::Request<()>,
     ) -> Result<tonic::Request<()>, tonic::Status> {
-        let ns = extract_required_metadata_string(&request, "x-dmtr-ns")?;
-        let token = extract_required_metadata_string(&request, "x-dmtr-token")?;
+        let token = extract_required_metadata_string(&request, "x-dmtr-apikey")?;
 
-        let creds = AuthCredential::ApiKeyV1(ns, token);
+        let (hrp, token, _) = bech32::decode(&token).map_err(|error| {
+            warn!(?error, "invalid bech32");
+            tonic::Status::permission_denied("invalid apikey")
+        })?;
+
+        if hrp != "dmtr_apikey" {
+            return Err(Status::permission_denied("invalid apikey"));
+        }
+
+        let token = bech32::convert_bits(&token, 5, 8, true).map_err(|error| {
+            warn!(?error, "invalid bech32");
+            tonic::Status::permission_denied("invalid apikey")
+        })?;
+
+        let creds = domain::Credential::ApiKeyV1(token);
 
         request.extensions_mut().insert(creds);
 
@@ -33,10 +48,7 @@ impl tonic::service::Interceptor for Authenticator {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone)]
-pub struct Config {}
-
-pub fn build_interceptor(config: &Config) -> Authenticator {
+pub fn build_interceptor() -> Authenticator {
     Authenticator {}
 }
 
