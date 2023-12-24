@@ -1,10 +1,8 @@
-name: Build
+name: Release
 
 on:
   push:
-    branches:
-      - "main"
-      # - "images-ci"
+    tags: v*
 
 jobs:
   build:
@@ -47,8 +45,8 @@ jobs:
       - name: upload artifacts
         uses: actions/upload-artifact@v3
         with:
-          name: dmtrop-${{ matrix.arch }}
-          path: target/${{ matrix.target }}/release/dmtrop
+          name: dmtrd-${{ matrix.arch }}
+          path: target/${{ matrix.target }}/release/dmtrd
 
   docker:
     runs-on: ubuntu-latest
@@ -64,7 +62,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v4
         with:
-          images: ghcr.io/demeter-run/operator
+          images: ghcr.io/demeter-run/daemon
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=semver,pattern=v{{major}}
