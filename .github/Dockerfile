@@ -1,7 +1,7 @@
 FROM alpine:latest
 
 ARG TARGETARCH
-COPY dmtrop-${TARGETARCH} /bin/dmtrop
+COPY dmtrd-${TARGETARCH} /bin/dmtrd
 RUN ln -s /bin/dmtrd /dmtrd
 
 ENTRYPOINT ["dmtrd"]

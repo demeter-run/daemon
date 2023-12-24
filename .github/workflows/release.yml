@@ -1,4 +1,4 @@
-name: Build
+name: Release
 
 on:
   push:
@@ -45,8 +45,8 @@ jobs:
       - name: upload artifacts
         uses: actions/upload-artifact@v3
         with:
-          name: dmtrop-${{ matrix.arch }}
-          path: target/${{ matrix.target }}/release/dmtrop
+          name: dmtrd-${{ matrix.arch }}
+          path: target/${{ matrix.target }}/release/dmtrd
 
   docker:
     runs-on: ubuntu-latest
