@@ -64,7 +64,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v4
         with:
-          images: ghcr.io/demeter-run/operator
+          images: ghcr.io/demeter-run/daemon
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=semver,pattern=v{{major}}
