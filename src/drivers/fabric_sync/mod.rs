@@ -19,7 +19,9 @@ pub async fn run(domain: Arc<Mutex<Domain>>) -> Result<()> {
                 .on_apikey_registered(evt)
                 .await
                 .context("handling apikey registered event")?,
-            Event::NamespaceMintedV1(_) => todo!(),
+            Event::NamespaceMintedV1(evt) => {
+                warn!(ns = evt.name, "TODO: handle namespace minted");
+            }
             Event::ResourceCreatedV1(evt) => {
                 warn!(
                     uuid = hex::encode(evt.resource_uuid),
