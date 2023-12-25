@@ -1,5 +1,5 @@
 use tonic::Status;
-use tracing::warn;
+use tracing::{info, warn};
 
 use crate::domain;
 
@@ -24,7 +24,7 @@ impl tonic::service::Interceptor for Authenticator {
         &mut self,
         mut request: tonic::Request<()>,
     ) -> Result<tonic::Request<()>, tonic::Status> {
-        let token = extract_required_metadata_string(&request, "x-dmtr-apikey")?;
+        let token = extract_required_metadata_string(&request, "dmtr-api-key")?;
 
         let (hrp, token, _) = bech32::decode(&token).map_err(|error| {
             warn!(?error, "invalid bech32");
@@ -32,10 +32,11 @@ impl tonic::service::Interceptor for Authenticator {
         })?;
 
         if hrp != "dmtr_apikey" {
+            warn!(hrp, "invalid bech32 hrp");
             return Err(Status::permission_denied("invalid apikey"));
         }
 
-        let token = bech32::convert_bits(&token, 5, 8, true).map_err(|error| {
+        let token = bech32::convert_bits(&token, 5, 8, false).map_err(|error| {
             warn!(?error, "invalid bech32");
             tonic::Status::permission_denied("invalid apikey")
         })?;

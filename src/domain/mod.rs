@@ -1,4 +1,5 @@
 use anyhow::{bail, Result};
+use tracing::info;
 
 use crate::driven::event_dispatch::EventDispatch;
 use crate::driven::fabric_state::FabricState;
@@ -6,6 +7,7 @@ use crate::driven::fabric_state::FabricState;
 mod auth;
 mod events;
 
+pub use auth::*;
 pub use events::*;
 
 pub struct Domain {
@@ -20,6 +22,7 @@ pub type HashDigest = [u8; 32];
 pub type HashSalt = Vec<u8>;
 pub type NamespaceName = String;
 
+#[derive(Clone)]
 pub enum Credential {
     OwnerSignatureV1(SignatureValue, AuthTimestamp),
     ApiKeyV1(SecretValue),
@@ -31,11 +34,25 @@ pub struct RegisterApiKeyCmd {
     pub secret: SecretValue,
 }
 
+pub struct ResourceMetadata {
+    pub namespace: NamespaceName,
+    pub name: String,
+}
+
+pub struct AnyResource {
+    pub kind: String,
+    pub manifest: Vec<u8>,
+}
+
 pub struct CreateResourceCmd {
     pub auth: Credential,
-    pub namespace: NamespaceName,
-    pub resource_type: String,
-    pub resource_spec: String,
+    pub metadata: ResourceMetadata,
+    pub spec: AnyResource,
+}
+
+pub struct CreateResourceAck {
+    pub event_receipt: Vec<u8>,
+    pub resource_uuid: Vec<u8>,
 }
 
 pub struct ListResourcesQuery {
@@ -56,6 +73,8 @@ impl Domain {
     }
 
     pub async fn on_namespace_minted(&self, evt: NamespaceMintedV1) -> Result<()> {
+        info!("namespace minted");
+
         // TODO: how do we handle business invariants? eg, if the namespace isn't
         // available, then something in inconsistent at a global scale.
         self.assert_available_namespace(&evt.name).await?;
@@ -108,6 +127,8 @@ impl Domain {
     }
 
     pub async fn register_apikey(&mut self, cmd: RegisterApiKeyCmd) -> Result<()> {
+        info!("registering apikey");
+
         self.assert_existing_namespace(&cmd.namespace).await?;
 
         self.assert_valid_credentials(&cmd.namespace, cmd.auth)
@@ -116,18 +137,18 @@ impl Domain {
         let salt = b"somesaltforyou";
         let digest = auth::digest(&cmd.secret, salt)?;
 
-        self.event_dispatch
-            .submit_event(ApiKeyRegisteredV1 {
-                namespace: cmd.namespace,
-                digest,
-                salt: salt.to_vec(),
-            })
-            .await?;
+        self.event_dispatch.submit_event(ApiKeyRegisteredV1 {
+            namespace: cmd.namespace,
+            digest,
+            salt: salt.to_vec(),
+        })?;
 
         Ok(())
     }
 
     pub async fn on_apikey_registered(&mut self, evt: ApiKeyRegisteredV1) -> Result<()> {
+        info!("apikey registered");
+
         self.fabric_state
             .insert_api_key(&evt.namespace, &evt.digest, &evt.salt)
             .await?;
@@ -135,10 +156,13 @@ impl Domain {
         Ok(())
     }
 
-    pub async fn create_resource(&mut self, cmd: CreateResourceCmd) -> Result<()> {
-        self.assert_existing_namespace(&cmd.namespace).await?;
+    pub async fn create_resource(&mut self, cmd: CreateResourceCmd) -> Result<CreateResourceAck> {
+        info!("creating resource");
 
-        self.assert_valid_credentials(&cmd.namespace, cmd.auth)
+        self.assert_existing_namespace(&cmd.metadata.namespace)
+            .await?;
+
+        self.assert_valid_credentials(&cmd.metadata.namespace, cmd.auth)
             .await?;
 
         // TODO: assert permissions
@@ -147,12 +171,19 @@ impl Domain {
         // assert_resource_manifest_is_valid(cmd);
         // assert_resource_doesnt_exist(cmd);
 
-        // dispatch_resource_created_event(cmd);
-        self.event_dispatch
-            .submit_event(ResourceCreatedV1 {})
-            .await?;
+        // define a new uuid for the resource
+        let resource_uuid = uuid::Uuid::new_v4().into_bytes().to_vec();
 
-        Ok(())
+        let event_receipt = self.event_dispatch.submit_event(ResourceCreatedV1 {
+            resource_uuid: resource_uuid.clone(),
+        })?;
+
+        let ack = CreateResourceAck {
+            event_receipt,
+            resource_uuid,
+        };
+
+        Ok(ack)
     }
 
     pub fn list_resources(query: ListResourcesQuery) {
@@ -164,19 +195,48 @@ impl Domain {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+    use tokio::sync::{broadcast::Receiver, Mutex};
+
+    use crate::driven::event_dispatch::EventWrapper;
+
     use super::*;
+
+    async fn basic_event_watch_loop(
+        mut subscription: Receiver<EventWrapper>,
+        domain: Arc<Mutex<Domain>>,
+    ) {
+        while let Ok(EventWrapper(evt, _)) = subscription.recv().await {
+            let mut domain = domain.lock().await;
+
+            match evt {
+                Event::ApiKeyRegisteredV1(evt) => domain.on_apikey_registered(evt).await.unwrap(),
+                Event::NamespaceMintedV1(_) => todo!(),
+                Event::ResourceCreatedV1(_) => todo!(),
+            }
+        }
+    }
 
     #[tokio::test]
     async fn happy_path() {
         let fabric_state = FabricState::ephemeral().await.unwrap();
-        let event_dispatch = EventDispatch::ephemeral();
+        let event_dispatch = EventDispatch::ephemeral(100);
 
         let mut domain = Domain {
             fabric_state,
             event_dispatch,
         };
 
+        let subscription = domain.event_dispatch.subscribe();
+
+        let domain = Arc::new(Mutex::new(domain));
+
+        let domain2 = domain.clone();
+        let watcher = tokio::spawn(async move { basic_event_watch_loop(subscription, domain2) });
+
         domain
+            .lock()
+            .await
             .on_namespace_minted(NamespaceMintedV1 {
                 name: "ns1".into(),
                 root_public_key: "123".into(),
@@ -185,6 +245,8 @@ mod tests {
             .unwrap();
 
         domain
+            .lock()
+            .await
             .register_apikey(RegisterApiKeyCmd {
                 auth: Credential::OwnerSignatureV1("123".into(), 1234),
                 namespace: "ns1".into(),
@@ -193,26 +255,23 @@ mod tests {
             .await
             .unwrap();
 
-        while let Some(evt) = domain.event_dispatch.entries.pop_front() {
-            match evt {
-                Event::ApiKeyRegisteredV1(evt) => domain.on_apikey_registered(evt).await.unwrap(),
-                Event::NamespaceMintedV1(_) => todo!(),
-                Event::ResourceCreatedV1(_) => todo!(),
-            }
-        }
-
         domain
+            .lock()
+            .await
             .create_resource(CreateResourceCmd {
                 auth: Credential::ApiKeyV1(b"mybadpassword".to_vec()),
-                namespace: "ns1".into(),
-                resource_type: "workers.demeter.run/v1Allpha1".into(),
-                resource_spec: "{}".into(),
+                metadata: ResourceMetadata {
+                    namespace: "ns1".into(),
+                    name: "res1".into(),
+                },
+                spec: AnyResource {
+                    kind: "workers.demeter.run/v1Allpha1".into(),
+                    manifest: "{}".into(),
+                },
             })
             .await
             .unwrap();
 
-        let Domain { event_dispatch, .. } = domain;
-
-        dbg!(event_dispatch.entries);
+        watcher.abort();
     }
 }

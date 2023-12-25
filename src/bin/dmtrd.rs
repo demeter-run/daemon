@@ -1,5 +1,12 @@
+use std::sync::Arc;
+
 use clap::Parser;
+use dmtrd::{
+    domain::Domain,
+    driven::{event_dispatch::EventDispatch, fabric_state::FabricState},
+};
 use serde::Deserialize;
+use tokio::sync::Mutex;
 use tracing::info;
 
 #[derive(Parser)]
@@ -28,17 +35,67 @@ impl ConfigRoot {
     }
 }
 
+async fn seed_dummy_data(domain: &mut Domain) {
+    domain
+        .on_namespace_minted(dmtrd::domain::NamespaceMintedV1 {
+            name: "ns1".into(),
+            root_public_key: "123".into(),
+        })
+        .await
+        .unwrap();
+
+    let pwd = hex::decode("6d7962616470617373776f7264").unwrap();
+    let salt = b"somesaltforyou";
+
+    domain
+        .on_apikey_registered(dmtrd::domain::ApiKeyRegisteredV1 {
+            namespace: "ns1".into(),
+            digest: dmtrd::domain::digest(&pwd, salt).unwrap(),
+            salt: salt.to_vec(),
+        })
+        .await
+        .unwrap();
+}
+
 #[tokio::main]
 async fn main() {
     let _ = App::parse();
 
     tracing_subscriber::fmt::init();
 
-    info!("starting rpc driver");
+    let fabric_state = FabricState::ephemeral().await.unwrap();
+    let event_dispatch = EventDispatch::ephemeral(100);
 
-    dmtrd::drivers::rpc::serve(dmtrd::drivers::rpc::Config {
-        listen_address: "[::]:50051".into(),
-    })
-    .await
-    .unwrap();
+    let mut domain = Domain {
+        fabric_state,
+        event_dispatch,
+    };
+
+    seed_dummy_data(&mut domain).await;
+
+    let domain = Arc::new(Mutex::new(domain));
+
+    let domain1 = domain.clone();
+    let thread1 = tokio::spawn(async move {
+        info!("starting rpc driver");
+
+        dmtrd::drivers::rpc::serve(
+            dmtrd::drivers::rpc::Config {
+                listen_address: "[::]:50051".into(),
+            },
+            domain1,
+        )
+        .await
+    });
+
+    let domain2 = domain.clone();
+    let thread2 = tokio::spawn(async move {
+        info!("starting fabric sync");
+
+        dmtrd::drivers::fabric_sync::run(domain2).await
+    });
+
+    let (res1, res2) = tokio::try_join!(thread1, thread2).unwrap();
+
+    res1.and(res2).unwrap();
 }

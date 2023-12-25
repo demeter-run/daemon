@@ -582,6 +582,7 @@ dependencies = [
  "hex",
  "k8s-openapi",
  "kube",
+ "protoc-wkt",
  "schemars",
  "serde",
  "serde_json",
@@ -590,14 +591,15 @@ dependencies = [
  "thiserror",
  "tokio",
  "tonic",
+ "tonic-reflection",
  "tracing",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]
 name = "dmtri"
 version = "0.1.0"
-source = "git+https://github.com/demeter-run/specs.git#a902aa468d7876def69751b21f52460188db4064"
 dependencies = [
  "bytes",
  "pbjson",
@@ -1903,6 +1905,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "protoc-wkt"
+version = "1.0.0+3.20.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ae1d0fdc23ea945d58449259496ba12d3b520da1a45ce5011f631c990add9029"
+
+[[package]]
 name = "quote"
 version = "1.0.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2764,6 +2772,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "tonic-reflection"
+version = "0.9.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0543d7092032041fbeac1f2c84304537553421a11a623c2301b12ef0264862c7"
+dependencies = [
+ "prost",
+ "prost-types",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+]
+
+[[package]]
 name = "tower"
 version = "0.4.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2969,6 +2990,15 @@ name = "utf8parse"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "711b9620af191e0cdc7468a8d14e709c3dcdb115b36f838e601583af800a370a"
+
+[[package]]
+name = "uuid"
+version = "1.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5e395fcf16a7a3d8127ec99782007af141946b4795001f876d54fb0d55978560"
+dependencies = [
+ "getrandom",
+]
 
 [[package]]
 name = "valuable"
