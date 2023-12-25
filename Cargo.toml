@@ -26,5 +26,10 @@ base64 = "0.21.2"
 tonic = "0.9.2"
 argon2 = "0.5.2"
 sqlx = { version = "0.7.3", features = ["runtime-tokio-rustls", "sqlite"] }
-dmtri = { version = "0.1.0", git = "https://github.com/demeter-run/specs.git" }
 bech32 = "0.9.1"
+tonic-reflection = "^0.9"
+protoc-wkt = "1.0.0"
+uuid = { version = "1.6.1", features = ["v4"] }
+
+dmtri = { version = "0.1.0", git = "https://github.com/demeter-run/specs.git" }
+# dmtri = { version = "0.1.0", path = "../specs/gen/rust" }
