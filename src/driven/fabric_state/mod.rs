@@ -11,6 +11,13 @@ pub struct ApiKey {
     pub salt: Vec<u8>,
 }
 
+#[derive(Debug, sqlx::FromRow)]
+pub struct ListResourceProj {
+    pub name: String,
+    pub uuid: Vec<u8>,
+    pub kind: String,
+}
+
 impl FabricState {
     pub async fn open(path: &Path) -> Result<Self> {
         let url = format!("sqlite:{}?mode=rwc", path.display());
@@ -88,6 +95,45 @@ VALUES ($1, $2, $3)
             r#"
 SELECT digest, salt
 FROM apikeys
+WHERE namespace = $1
+"#,
+        )
+        .bind(ns)
+        .fetch_all(&self.db)
+        .await?;
+
+        Ok(rows)
+    }
+
+    pub async fn insert_resource(
+        &self,
+        ns: &str,
+        kind: &str,
+        uuid: &[u8],
+        name: &str,
+        manifest: &[u8],
+    ) -> Result<()> {
+        sqlx::query!(
+            r#"
+INSERT INTO resources (namespace, kind, uuid, name, manifest) 
+VALUES ($1, $2, $3, $4, $5)
+"#,
+            ns,
+            kind,
+            uuid,
+            name,
+            manifest
+        )
+        .execute(&self.db)
+        .await?;
+
+        Ok(())
+    }
+
+    pub async fn list_resources(&self, ns: &str) -> Result<Vec<ListResourceProj>> {
+        let rows = sqlx::query_as::<_, ListResourceProj>(
+            r#"
+SELECT name, uuid, kind FROM resources
 WHERE namespace = $1
 "#,
         )

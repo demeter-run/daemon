@@ -1,9 +1,10 @@
+use k8s_openapi::http::request;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tonic::{async_trait, Status};
 
 use crate::domain;
-use dmtri::demeter::ops::v1alpha as proto;
+use dmtri::demeter::ops::v1alpha::{self as proto, ListResourcesResponse};
 
 pub struct OpsServiceImpl {
     domain: Arc<Mutex<domain::Domain>>,
@@ -32,23 +33,19 @@ impl proto::ops_service_server::OpsService for OpsServiceImpl {
 
         let mut domain = self.domain.lock().await;
 
+        let proto_meta = req
+            .metadata
+            .ok_or(Status::invalid_argument("missing metadata"))?;
+
+        let proto_spec = req.spec.ok_or(Status::invalid_argument("missing spec"))?;
+
         let ack = domain
             .create_resource(domain::CreateResourceCmd {
                 auth: credential,
-                metadata: req
-                    .metadata
-                    .map(|proto| domain::ResourceMetadata {
-                        namespace: proto.namespace,
-                        name: proto.name,
-                    })
-                    .ok_or(Status::invalid_argument("missing metadata"))?,
-                spec: req
-                    .spec
-                    .map(|x| domain::AnyResource {
-                        kind: x.type_url,
-                        manifest: x.value.into(),
-                    })
-                    .ok_or(Status::invalid_argument("missing resource"))?,
+                namespace: proto_meta.namespace,
+                name: proto_meta.name,
+                kind: proto_spec.type_url,
+                spec: proto_spec.value.into(),
             })
             .await
             .map_err(|err| Status::unknown(err.to_string()))?;
@@ -65,7 +62,37 @@ impl proto::ops_service_server::OpsService for OpsServiceImpl {
         &self,
         request: tonic::Request<proto::ListResourcesRequest>,
     ) -> Result<tonic::Response<proto::ListResourcesResponse>, tonic::Status> {
-        todo!()
+        let credential = request.extensions().get::<domain::Credential>();
+
+        let credential = match credential {
+            None => return Err(Status::permission_denied("invalid credential")),
+            Some(x) => x.clone(),
+        };
+
+        let domain = self.domain.lock().await;
+
+        let items = domain
+            .list_resources(domain::ListResourcesQuery {
+                auth: credential,
+                namespace_name: request.into_inner().namespace,
+                resource_name: "".into(),
+            })
+            .await
+            .map_err(|err| Status::unknown(err.to_string()))?
+            .into_iter()
+            .map(|x| proto::Resource {
+                metadata: Some(proto::ResourceMetadata {
+                    namespace: x.metadata.namespace,
+                    name: x.metadata.name,
+                }),
+                spec: None,
+                status: None,
+            })
+            .collect();
+
+        let res = proto::ListResourcesResponse { items };
+
+        Ok(tonic::Response::new(res))
     }
 
     async fn read_resource(

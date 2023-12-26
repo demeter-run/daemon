@@ -20,7 +20,6 @@ pub type AuthTimestamp = u64;
 pub type SecretValue = Vec<u8>;
 pub type HashDigest = [u8; 32];
 pub type HashSalt = Vec<u8>;
-pub type NamespaceName = String;
 
 #[derive(Clone)]
 pub enum Credential {
@@ -34,20 +33,12 @@ pub struct RegisterApiKeyCmd {
     pub secret: SecretValue,
 }
 
-pub struct ResourceMetadata {
-    pub namespace: NamespaceName,
-    pub name: String,
-}
-
-pub struct AnyResource {
-    pub kind: String,
-    pub manifest: Vec<u8>,
-}
-
 pub struct CreateResourceCmd {
     pub auth: Credential,
-    pub metadata: ResourceMetadata,
-    pub spec: AnyResource,
+    pub namespace: String,
+    pub name: String,
+    pub kind: String,
+    pub spec: Blob,
 }
 
 pub struct CreateResourceAck {
@@ -59,6 +50,12 @@ pub struct ListResourcesQuery {
     pub auth: Credential,
     pub resource_name: String,
     pub namespace_name: String,
+}
+
+pub struct ListResourcesItem {
+    pub metadata: ResourceMetadataV1,
+    pub spec: Blob,
+    pub status: Blob,
 }
 
 impl Domain {
@@ -159,10 +156,9 @@ impl Domain {
     pub async fn create_resource(&mut self, cmd: CreateResourceCmd) -> Result<CreateResourceAck> {
         info!("creating resource");
 
-        self.assert_existing_namespace(&cmd.metadata.namespace)
-            .await?;
+        self.assert_existing_namespace(&cmd.namespace).await?;
 
-        self.assert_valid_credentials(&cmd.metadata.namespace, cmd.auth)
+        self.assert_valid_credentials(&cmd.namespace, cmd.auth)
             .await?;
 
         // TODO: assert permissions
@@ -175,7 +171,13 @@ impl Domain {
         let resource_uuid = uuid::Uuid::new_v4().into_bytes().to_vec();
 
         let event_receipt = self.event_dispatch.submit_event(ResourceCreatedV1 {
-            resource_uuid: resource_uuid.clone(),
+            metadata: ResourceMetadataV1 {
+                namespace: cmd.namespace,
+                kind: cmd.kind,
+                name: cmd.name,
+                uuid: resource_uuid.clone(),
+            },
+            manifest: cmd.spec,
         })?;
 
         let ack = CreateResourceAck {
@@ -186,10 +188,51 @@ impl Domain {
         Ok(ack)
     }
 
-    pub fn list_resources(query: ListResourcesQuery) {
-        // assert_namespace_is_valid(query);
+    pub async fn on_resource_created(&mut self, evt: ResourceCreatedV1) -> Result<()> {
+        info!("resource created");
+
+        self.fabric_state
+            .insert_resource(
+                &evt.metadata.namespace,
+                &evt.metadata.kind,
+                &evt.metadata.uuid,
+                &evt.metadata.name,
+                &evt.manifest,
+            )
+            .await?;
+
+        Ok(())
+    }
+
+    pub async fn list_resources(
+        &self,
+        query: ListResourcesQuery,
+    ) -> Result<Vec<ListResourcesItem>> {
+        self.assert_existing_namespace(&query.namespace_name)
+            .await?;
+
         // assert_namespace_read_access(query);
-        // fetch_resources_by_namespace(query);
+        self.assert_valid_credentials(&query.namespace_name, query.auth)
+            .await?;
+
+        let items = self
+            .fabric_state
+            .list_resources(&query.namespace_name)
+            .await?
+            .into_iter()
+            .map(|x| ListResourcesItem {
+                metadata: ResourceMetadataV1 {
+                    namespace: query.namespace_name.clone(),
+                    kind: x.kind,
+                    name: x.name,
+                    uuid: x.uuid,
+                },
+                spec: vec![],
+                status: vec![],
+            })
+            .collect();
+
+        Ok(items)
     }
 }
 
@@ -211,8 +254,8 @@ mod tests {
 
             match evt {
                 Event::ApiKeyRegisteredV1(evt) => domain.on_apikey_registered(evt).await.unwrap(),
+                Event::ResourceCreatedV1(evt) => domain.on_resource_created(evt).await.unwrap(),
                 Event::NamespaceMintedV1(_) => todo!(),
-                Event::ResourceCreatedV1(_) => todo!(),
             }
         }
     }
@@ -260,14 +303,10 @@ mod tests {
             .await
             .create_resource(CreateResourceCmd {
                 auth: Credential::ApiKeyV1(b"mybadpassword".to_vec()),
-                metadata: ResourceMetadata {
-                    namespace: "ns1".into(),
-                    name: "res1".into(),
-                },
-                spec: AnyResource {
-                    kind: "workers.demeter.run/v1Allpha1".into(),
-                    manifest: "{}".into(),
-                },
+                namespace: "ns1".into(),
+                name: "res1".into(),
+                kind: "workers.demeter.run/v1Allpha1".into(),
+                spec: b"abc".into(),
             })
             .await
             .unwrap();
