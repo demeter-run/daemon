@@ -22,12 +22,10 @@ pub async fn run(domain: Arc<Mutex<Domain>>) -> Result<()> {
             Event::NamespaceMintedV1(evt) => {
                 warn!(ns = evt.name, "TODO: handle namespace minted");
             }
-            Event::ResourceCreatedV1(evt) => {
-                warn!(
-                    uuid = hex::encode(evt.resource_uuid),
-                    "TODO: handle resource created"
-                );
-            }
+            Event::ResourceCreatedV1(evt) => domain
+                .on_resource_created(evt)
+                .await
+                .context("handling resource created event")?,
         }
     }
 

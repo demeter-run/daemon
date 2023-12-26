@@ -10,6 +10,18 @@ macro_rules! into_event {
     };
 }
 
+pub type NamespaceName = String;
+
+#[derive(Debug, Clone)]
+pub struct ResourceMetadataV1 {
+    pub namespace: NamespaceName,
+    pub kind: String,
+    pub name: String,
+    pub uuid: Blob,
+}
+
+pub type Blob = Vec<u8>;
+
 #[derive(Debug, Clone)]
 pub struct NamespaceMintedV1 {
     pub name: String,
@@ -29,7 +41,8 @@ into_event!(ApiKeyRegisteredV1);
 
 #[derive(Debug, Clone)]
 pub struct ResourceCreatedV1 {
-    pub resource_uuid: Vec<u8>,
+    pub metadata: ResourceMetadataV1,
+    pub manifest: Vec<u8>,
 }
 
 into_event!(ResourceCreatedV1);
