@@ -1,8 +1,14 @@
+/// Domain
+///
+/// Should:
+/// - handle extrinsic events to update the internal state
+/// - handle extrinsic events to actuate on outside systems
+/// - execute commands and emit intrinsic events
 use anyhow::{bail, Result};
 use tracing::info;
 
 use crate::driven::event_dispatch::EventDispatch;
-use crate::driven::fabric_state::FabricState;
+use crate::driven::fabric_state::{AccountDelta, FabricState};
 
 mod auth;
 mod events;
@@ -10,7 +16,12 @@ mod events;
 pub use auth::*;
 pub use events::*;
 
+pub struct Config {
+    pub cluster: ClusterUuid,
+}
+
 pub struct Domain {
+    pub config: Config,
     pub event_dispatch: EventDispatch,
     pub fabric_state: FabricState,
 }
@@ -58,6 +69,16 @@ pub struct ListResourcesItem {
     pub status: Blob,
 }
 
+pub struct ReadBalanceQuery {
+    pub auth: Credential,
+    pub namespace_name: String,
+}
+
+#[derive(Debug)]
+pub struct ReadBalanceOutput {
+    pub accounts: Vec<(u64, u64, u64)>,
+}
+
 impl Domain {
     async fn assert_available_namespace(&self, ns: &NamespaceName) -> Result<()> {
         let exists = self.fabric_state.namespace_exists(&ns).await?;
@@ -69,11 +90,11 @@ impl Domain {
         Ok(())
     }
 
-    pub async fn on_namespace_minted(&self, evt: NamespaceMintedV1) -> Result<()> {
+    async fn on_namespace_minted(&self, evt: NamespaceMintedV1) -> Result<()> {
         info!("namespace minted");
 
         // TODO: how do we handle business invariants? eg, if the namespace isn't
-        // available, then something in inconsistent at a global scale.
+        // available, then something is inconsistent at a global scale.
         self.assert_available_namespace(&evt.name).await?;
 
         self.fabric_state.insert_namespace(&evt.name).await?;
@@ -109,7 +130,7 @@ impl Domain {
         bail!("invalid api key")
     }
 
-    pub async fn assert_valid_credentials(
+    async fn assert_valid_credentials(
         &self,
         ns: &NamespaceName,
         credential: Credential,
@@ -143,7 +164,7 @@ impl Domain {
         Ok(())
     }
 
-    pub async fn on_apikey_registered(&mut self, evt: ApiKeyRegisteredV1) -> Result<()> {
+    async fn on_apikey_registered(&mut self, evt: ApiKeyRegisteredV1) -> Result<()> {
         info!("apikey registered");
 
         self.fabric_state
@@ -188,7 +209,7 @@ impl Domain {
         Ok(ack)
     }
 
-    pub async fn on_resource_created(&mut self, evt: ResourceCreatedV1) -> Result<()> {
+    async fn on_resource_created(&mut self, evt: ResourceCreatedV1) -> Result<()> {
         info!("resource created");
 
         self.fabric_state
@@ -234,58 +255,142 @@ impl Domain {
 
         Ok(items)
     }
+
+    pub async fn read_balance(&self, query: ReadBalanceQuery) -> Result<ReadBalanceOutput> {
+        self.assert_existing_namespace(&query.namespace_name)
+            .await?;
+
+        // assert_namespace_balance_access(query);
+        self.assert_valid_credentials(&query.namespace_name, query.auth)
+            .await?;
+
+        let accounts = self
+            .fabric_state
+            .read_balance(&query.namespace_name)
+            .await?
+            .into_iter()
+            .map(|(a, b, c)| (a as u64, b as u64, c as u64))
+            .collect();
+
+        Ok(ReadBalanceOutput { accounts })
+    }
+
+    async fn on_resource_usage(&mut self, evt: ResourceUsageV1) -> Result<()> {
+        info!("resource usage");
+
+        self.fabric_state
+            .insert_accounting(
+                evt.epoch as i64,
+                &evt.entry,
+                &evt.cluster,
+                &evt.namespace,
+                Some(&evt.resource),
+                vec![
+                    AccountDelta {
+                        account: 1,
+                        debit: Some(evt.units as i64),
+                        credit: None,
+                    },
+                    AccountDelta {
+                        account: 2,
+                        debit: None,
+                        credit: Some(evt.units as i64),
+                    },
+                ],
+            )
+            .await?;
+
+        Ok(())
+    }
+
+    async fn on_usage_payment(&mut self, evt: UsagePaymentV1) -> Result<()> {
+        info!("usage payment");
+
+        self.fabric_state
+            .insert_accounting(
+                evt.epoch as i64,
+                &evt.entry,
+                &evt.cluster,
+                &evt.namespace,
+                None,
+                vec![
+                    AccountDelta {
+                        account: 2,
+                        debit: Some(evt.units as i64),
+                        credit: None,
+                    },
+                    AccountDelta {
+                        account: 3,
+                        debit: None,
+                        credit: Some(evt.units as i64),
+                    },
+                ],
+            )
+            .await?;
+
+        Ok(())
+    }
+
+    pub async fn handle(&mut self, event: Event) -> Result<()> {
+        info!(?event, "event recevied");
+
+        match event {
+            Event::NamespaceMintedV1(evt) => self.on_namespace_minted(evt).await,
+            Event::ApiKeyRegisteredV1(evt) => self.on_apikey_registered(evt).await,
+            Event::ResourceCreatedV1(evt) => self.on_resource_created(evt).await,
+            Event::ResourceUsageV1(evt) => self.on_resource_usage(evt).await,
+            Event::UsagePaymentV1(evt) => self.on_usage_payment(evt).await,
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-    use tokio::sync::{broadcast::Receiver, Mutex};
+    use std::{sync::Arc, time::Duration};
+    use tokio::sync::Mutex;
 
     use crate::driven::event_dispatch::EventWrapper;
 
     use super::*;
 
-    async fn basic_event_watch_loop(
-        mut subscription: Receiver<EventWrapper>,
-        domain: Arc<Mutex<Domain>>,
-    ) {
-        while let Ok(EventWrapper(evt, _)) = subscription.recv().await {
-            let mut domain = domain.lock().await;
-
-            match evt {
-                Event::ApiKeyRegisteredV1(evt) => domain.on_apikey_registered(evt).await.unwrap(),
-                Event::ResourceCreatedV1(evt) => domain.on_resource_created(evt).await.unwrap(),
-                Event::NamespaceMintedV1(_) => todo!(),
-            }
-        }
-    }
-
     #[tokio::test]
     async fn happy_path() {
+        tracing_subscriber::fmt::init();
+
         let fabric_state = FabricState::ephemeral().await.unwrap();
         let event_dispatch = EventDispatch::ephemeral(100);
 
         let mut domain = Domain {
+            config: Config {
+                cluster: b"123".into(),
+            },
             fabric_state,
             event_dispatch,
         };
 
-        let subscription = domain.event_dispatch.subscribe();
+        let mut subscription = domain.event_dispatch.subscribe();
 
         let domain = Arc::new(Mutex::new(domain));
 
         let domain2 = domain.clone();
-        let watcher = tokio::spawn(async move { basic_event_watch_loop(subscription, domain2) });
+        let watcher = tokio::spawn(async move {
+            while let Ok(EventWrapper(evt, _)) = subscription.recv().await {
+                domain2.lock().await.handle(evt).await.unwrap();
+            }
+        });
 
+        // extrinsic event
         domain
             .lock()
             .await
-            .on_namespace_minted(NamespaceMintedV1 {
+            .event_dispatch
+            .submit_event(NamespaceMintedV1 {
                 name: "ns1".into(),
                 root_public_key: "123".into(),
             })
-            .await
             .unwrap();
+
+        tokio::time::sleep(Duration::from_secs(3)).await;
 
         domain
             .lock()
@@ -298,18 +403,65 @@ mod tests {
             .await
             .unwrap();
 
-        domain
+        tokio::time::sleep(Duration::from_secs(3)).await;
+
+        let res_ack = domain
             .lock()
             .await
             .create_resource(CreateResourceCmd {
                 auth: Credential::ApiKeyV1(b"mybadpassword".to_vec()),
                 namespace: "ns1".into(),
                 name: "res1".into(),
-                kind: "workers.demeter.run/v1Allpha1".into(),
+                kind: "workers.demeter.run/v1alpha1".into(),
                 spec: b"abc".into(),
             })
             .await
             .unwrap();
+
+        tokio::time::sleep(Duration::from_secs(3)).await;
+
+        // extrinsic event
+        domain
+            .lock()
+            .await
+            .event_dispatch
+            .submit_event(ResourceUsageV1 {
+                entry: b"1".into(),
+                epoch: 123,
+                namespace: "ns1".into(),
+                resource: res_ack.resource_uuid,
+                cluster: b"cluster1".into(),
+                units: 500,
+            })
+            .unwrap();
+
+        // extrinsic event
+        domain
+            .lock()
+            .await
+            .event_dispatch
+            .submit_event(UsagePaymentV1 {
+                entry: b"1".into(),
+                epoch: 123,
+                namespace: "ns1".into(),
+                cluster: b"cluster1".into(),
+                units: 400,
+            })
+            .unwrap();
+
+        tokio::time::sleep(Duration::from_secs(3)).await;
+
+        let balance = domain
+            .lock()
+            .await
+            .read_balance(ReadBalanceQuery {
+                auth: Credential::ApiKeyV1(b"mybadpassword".to_vec()),
+                namespace_name: "ns1".into(),
+            })
+            .await
+            .unwrap();
+
+        dbg!(balance);
 
         watcher.abort();
     }

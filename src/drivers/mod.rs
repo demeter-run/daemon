@@ -1,2 +1,2 @@
-pub mod fabric_sync;
+pub mod fabric_monitor;
 pub mod rpc;

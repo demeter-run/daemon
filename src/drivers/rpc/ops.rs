@@ -1,10 +1,9 @@
-use k8s_openapi::http::request;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tonic::{async_trait, Status};
 
 use crate::domain;
-use dmtri::demeter::ops::v1alpha::{self as proto, ListResourcesResponse};
+use dmtri::demeter::ops::v1alpha as proto;
 
 pub struct OpsServiceImpl {
     domain: Arc<Mutex<domain::Domain>>,
@@ -97,21 +96,21 @@ impl proto::ops_service_server::OpsService for OpsServiceImpl {
 
     async fn read_resource(
         &self,
-        request: tonic::Request<proto::ReadResourceRequest>,
+        _request: tonic::Request<proto::ReadResourceRequest>,
     ) -> Result<tonic::Response<proto::ReadResourceResponse>, tonic::Status> {
         todo!()
     }
 
     async fn patch_resource(
         &self,
-        request: tonic::Request<proto::PatchResourceRequest>,
+        _request: tonic::Request<proto::PatchResourceRequest>,
     ) -> Result<tonic::Response<proto::PatchResourceResponse>, tonic::Status> {
         todo!()
     }
 
     async fn delete_resource(
         &self,
-        request: tonic::Request<proto::DeleteResourceRequest>,
+        _request: tonic::Request<proto::DeleteResourceRequest>,
     ) -> Result<tonic::Response<proto::DeleteResourceResponse>, tonic::Status> {
         todo!()
     }
