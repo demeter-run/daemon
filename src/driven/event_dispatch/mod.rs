@@ -8,6 +8,7 @@ pub type EventReceipt = Vec<u8>;
 #[derive(Debug, Clone)]
 pub struct EventWrapper(pub Event, pub EventReceipt);
 
+#[derive(Clone)]
 pub struct EventDispatch {
     pub sender: tokio::sync::broadcast::Sender<EventWrapper>,
 }
@@ -27,7 +28,7 @@ impl EventDispatch {
         let rcpt = uuid::Uuid::new_v4().into_bytes().to_vec();
         let wrapper = EventWrapper(event.into(), rcpt.clone());
 
-        self.sender.send(wrapper);
+        self.sender.send(wrapper)?;
 
         Ok(rcpt)
     }

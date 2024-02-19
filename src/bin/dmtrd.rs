@@ -1,11 +1,10 @@
-use std::sync::Arc;
-
 use clap::Parser;
 use dmtrd::{
-    domain::Domain,
+    domain::{Config, Domain},
     driven::{event_dispatch::EventDispatch, fabric_state::FabricState},
 };
 use serde::Deserialize;
+use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::info;
 
@@ -37,10 +36,13 @@ impl ConfigRoot {
 
 async fn seed_dummy_data(domain: &mut Domain) {
     domain
-        .on_namespace_minted(dmtrd::domain::NamespaceMintedV1 {
-            name: "ns1".into(),
-            root_public_key: "123".into(),
-        })
+        .handle(
+            dmtrd::domain::NamespaceMintedV1 {
+                name: "ns1".into(),
+                root_public_key: "123".into(),
+            }
+            .into(),
+        )
         .await
         .unwrap();
 
@@ -48,11 +50,14 @@ async fn seed_dummy_data(domain: &mut Domain) {
     let salt = b"somesaltforyou";
 
     domain
-        .on_apikey_registered(dmtrd::domain::ApiKeyRegisteredV1 {
-            namespace: "ns1".into(),
-            digest: dmtrd::domain::digest(&pwd, salt).unwrap(),
-            salt: salt.to_vec(),
-        })
+        .handle(
+            dmtrd::domain::ApiKeyRegisteredV1 {
+                namespace: "ns1".into(),
+                digest: dmtrd::domain::digest(&pwd, salt).unwrap(),
+                salt: salt.to_vec(),
+            }
+            .into(),
+        )
         .await
         .unwrap();
 }
@@ -67,6 +72,9 @@ async fn main() {
     let event_dispatch = EventDispatch::ephemeral(100);
 
     let mut domain = Domain {
+        config: Config {
+            cluster: b"123".into(),
+        },
         fabric_state,
         event_dispatch,
     };
@@ -90,9 +98,9 @@ async fn main() {
 
     let domain2 = domain.clone();
     let thread2 = tokio::spawn(async move {
-        info!("starting fabric sync");
+        info!("starting fabric monitor");
 
-        dmtrd::drivers::fabric_sync::run(domain2).await
+        dmtrd::drivers::fabric_monitor::run(domain2).await
     });
 
     let (res1, res2) = tokio::try_join!(thread1, thread2).unwrap();

@@ -18,6 +18,12 @@ pub struct ListResourceProj {
     pub kind: String,
 }
 
+pub struct AccountDelta {
+    pub account: i64,
+    pub debit: Option<i64>,
+    pub credit: Option<i64>,
+}
+
 impl FabricState {
     pub async fn open(path: &Path) -> Result<Self> {
         let url = format!("sqlite:{}?mode=rwc", path.display());
@@ -130,6 +136,44 @@ VALUES ($1, $2, $3, $4, $5)
         Ok(())
     }
 
+    pub async fn insert_accounting(
+        &self,
+        epoch: i64,
+        entry: &[u8],
+        cluster: &[u8],
+        namespace: &str,
+        resource: Option<&[u8]>,
+        deltas: Vec<AccountDelta>,
+    ) -> Result<()> {
+        let mut tx = self.db.begin().await?;
+
+        for AccountDelta {
+            account,
+            debit,
+            credit,
+        } in deltas
+        {
+            sqlx::query!(
+                r#"
+INSERT INTO accounting (epoch, entry, cluster, namespace, resource, account, debit, credit) 
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+"#,
+                epoch,
+                entry,
+                cluster,
+                namespace,
+                resource,
+                account,
+                debit,
+                credit,
+            )
+            .execute(&mut *tx)
+            .await?;
+        }
+
+        Ok(())
+    }
+
     pub async fn list_resources(&self, ns: &str) -> Result<Vec<ListResourceProj>> {
         let rows = sqlx::query_as::<_, ListResourceProj>(
             r#"
@@ -143,11 +187,26 @@ WHERE namespace = $1
 
         Ok(rows)
     }
+
+    pub async fn read_balance(&self, ns: &str) -> Result<Vec<(i64, i64, i64)>> {
+        let rows = sqlx::query_as::<_, (i64, i64, i64)>(
+            r#"
+SELECT account, sum(debit), sum(credit) FROM accounting
+WHERE namespace = $1
+GROUP BY account
+"#,
+        )
+        .bind(ns)
+        .fetch_all(&self.db)
+        .await?;
+
+        Ok(rows)
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::FabricState;
+    use super::*;
 
     #[tokio::test]
     async fn test_namespace_persistence() {
@@ -190,5 +249,69 @@ mod tests {
         let item = keys.remove(0);
         assert_eq!(item.digest, b"abcd");
         assert_eq!(item.salt, b"zyxw");
+    }
+
+    #[tokio::test]
+    async fn test_accounting_persistence() {
+        let db = FabricState::ephemeral().await.unwrap();
+
+        db.migrate().await.unwrap();
+
+        db.insert_namespace("ns1").await.unwrap();
+
+        db.insert_resource("ns1", "pod", b"resource1", "mypod", b"")
+            .await
+            .unwrap();
+
+        db.insert_accounting(
+            1,
+            b"entry1",
+            b"cluster1",
+            "ns1",
+            Some(b"resource1"),
+            vec![
+                AccountDelta {
+                    account: 1,
+                    debit: Some(400),
+                    credit: None,
+                },
+                AccountDelta {
+                    account: 2,
+                    debit: None,
+                    credit: Some(400),
+                },
+            ],
+        )
+        .await
+        .unwrap();
+
+        db.insert_accounting(
+            1,
+            b"entry1",
+            b"cluster1",
+            "ns1",
+            None,
+            vec![
+                AccountDelta {
+                    account: 1,
+                    debit: Some(400),
+                    credit: None,
+                },
+                AccountDelta {
+                    account: 2,
+                    debit: None,
+                    credit: Some(400),
+                },
+            ],
+        )
+        .await
+        .unwrap();
+
+        let mut balance = db.read_balance("ns1").await.unwrap();
+
+        print!("{:?}", balance);
+
+        let entry1 = balance.remove(0);
+        assert_eq!(entry1, (1, 0, 0));
     }
 }

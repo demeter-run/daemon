@@ -1,5 +1,5 @@
 use tonic::Status;
-use tracing::{info, warn};
+use tracing::warn;
 
 use crate::domain;
 
