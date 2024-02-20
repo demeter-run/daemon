@@ -140,7 +140,7 @@ VALUES ($1, $2, $3, $4, $5)
         &self,
         epoch: i64,
         entry: &[u8],
-        cluster: &[u8],
+        cluster: Option<&[u8]>,
         namespace: &str,
         resource: Option<&[u8]>,
         deltas: Vec<AccountDelta>,
@@ -266,7 +266,7 @@ mod tests {
         db.insert_accounting(
             1,
             b"entry1",
-            b"cluster1",
+            Some(b"cluster1"),
             "ns1",
             Some(b"resource1"),
             vec![
@@ -288,7 +288,7 @@ mod tests {
         db.insert_accounting(
             1,
             b"entry1",
-            b"cluster1",
+            None,
             "ns1",
             None,
             vec![

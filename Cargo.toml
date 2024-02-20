@@ -33,3 +33,4 @@ uuid = { version = "1.6.1", features = ["v4"] }
 
 # dmtri = { version = "0.1.0", git = "https://github.com/demeter-run/specs.git" }
 dmtri = { version = "0.1.0", path = "../specs/gen/rust" }
+utxorpc = "0.1.0"
