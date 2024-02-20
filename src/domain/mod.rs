@@ -444,7 +444,6 @@ mod tests {
                 entry: b"1".into(),
                 epoch: 123,
                 namespace: "ns1".into(),
-                cluster: b"cluster1".into(),
                 units: 400,
             })
             .unwrap();

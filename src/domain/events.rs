@@ -68,7 +68,6 @@ pub struct UsagePaymentV1 {
     pub entry: Blob,
     pub epoch: Epoch,
     pub namespace: NamespaceName,
-    pub cluster: ClusterUuid,
     pub units: DCU,
 }
 
